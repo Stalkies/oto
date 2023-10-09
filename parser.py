@@ -11,11 +11,16 @@ from database import DataBase
     TODO:
 1. check currency and exchange all currencies to PLN
 2. upload info to DB
+3. closing session
+4. add to parsing keys 'Wersja', 'Generacja'
+5. fix utils.generate_data_types
 '''
 
 
 
-URL = "https://www.otomoto.pl/osobowe"
+# URL = "https://www.otomoto.pl/osobowe"
+URL = "https://www.otomoto.pl/osobowe/volkswagen/od-2008?search%5Bfilter_float_year%3Ato%5D=2011"
+
 HEADERS = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -65,45 +70,47 @@ async def get_cars_link(session: ClientSession, page_number):
             print(response.status)
 
 
-async def get_car_info(session: ClientSession, link, ERROR_LINKS, max_retries=3):
-    retries = 0
-    while retries < max_retries:
-        try:
+async def get_car_info(session: ClientSession, link, ERROR_LINKS):
+    try:
+        async with session.get(link) as response:
+            if response.status == 200:
+                html = await response.text()
+                data_dict = {} 
+                soup = BeautifulSoup(html, 'lxml')
+                divs = soup.find_all('div', {'data-testid': 'advert-details-item'})
+                for div in divs:
+                    key = div.find_all('p')[0].text
+                    if key not in PARSING_KEYS.keys():
+                        continue
+                    try:
+                        value = div.find('a').text
+                    except:
+                        value = div.find_all('p')[-1].text
 
-                async with session.get(link) as response:
-                    if response.status == 200:
-                        html = await response.text()
-                        data_dict = {} 
-                        soup = BeautifulSoup(html, 'lxml')
-                        divs = soup.find_all('div', {'data-testid': 'advert-details-item'})
-                        for div in divs:
-                            key = div.find_all('p')[0].text
-                            if key not in PARSING_KEYS.keys():
-                                continue
-                            try:
-                                value = div.find('a').text
-                            except:
-                                value = div.find_all('p')[-1].text
-
-                            if key == 'Rok produkcji':
-                                data_dict[PARSING_KEYS[key]] = int(value)
-                            else:
-                                data_dict[PARSING_KEYS[key]] = value
-                        try:
-                            data_dict['price'] = int(float(soup.find('h3', class_='offer-price__number')
-                                                           .text.replace(' ', '').replace(',','.')))
-                            data_dict['currency'] = soup.find('p', class_='offer-price__currency').text
-                        except AttributeError:
-                            data_dict['price'] = None
-                        data_dict['link'] = link
-                        return data_dict
+                    if key == 'Rok produkcji':
+                        data_dict[PARSING_KEYS[key]] = int(value)
+                    elif key in ('Moc', 'Przebieg', 'Pojemność skokowa'):
+                        value_int = ''
+                        for char in value:
+                            if char.isdigit():
+                                value_int += char
+                        value = int(value_int)
+                        data_dict[PARSING_KEYS[key]] = value
                     else:
-                        break
-        except:
-            retries += 1
-            time.sleep(3)
-            print('ERROR retrying...')
-    ERROR_LINKS.append(link)
+                        data_dict[PARSING_KEYS[key]] = value
+                try:
+                    data_dict['price'] = int(float(soup.find('h3', class_='offer-price__number')
+                                                    .text.replace(' ', '').replace(',','.')))
+                    data_dict['currency'] = soup.find('p', class_='offer-price__currency').text
+                except AttributeError:
+                    data_dict['price'] = None
+                data_dict['link'] = link
+                print(f'[INFO] Link {link} successfully parsed')
+                return data_dict
+            else:
+                ERROR_LINKS.append(link)
+    except:
+        ERROR_LINKS.append(link)
 
 
 async def main():
@@ -119,11 +126,11 @@ async def main():
     results = []
     for page in range(1, pages_count+1):
         tasks.append(asyncio.create_task(get_cars_link(session=session, page_number=page)))
-        if page % 200 == 0:
+        if page % 100 == 0:
             results += await asyncio.gather(*tasks)
             tasks = []
-            print("\tSLEEP 180...")
-            time.sleep(180)
+            # print("\tSLEEP 180...")
+            # time.sleep(180)
 
     links = set()
     for list_links in results:
@@ -139,13 +146,14 @@ async def main():
             tasks.append(get_car_info(session=session, link=link, ERROR_LINKS=ERROR_LINKS))
         links = links[20:]
         cars = await asyncio.gather(*tasks)
+        await db.create_table(cars)
         for car in cars:
             await db.add_car(car=car)
         print("+\t20")
-        item += 20
-        if item % 200 == 0:
-            print("\tSLEEP 300...")
-            time.sleep(300)
+        # item += 20
+        # if item % 200 == 0:
+        #     print("\tSLEEP 300...")
+        #     time.sleep(300)
 
     # RETRYING ERRORS
     print('Errors:', len(ERROR_LINKS))
@@ -158,10 +166,12 @@ async def main():
         cars = await asyncio.gather(*tasks)
         for car in cars:
             await db.add_car(car=car)
-        item += 20
-        if item % 200 == 0:
-            print("\tSLEEP 300...")
-            time.sleep(300)
+        item += len(tasks)
+        print(f'\tErrors left: {len(ERROR_LINKS)}')
+        
+        # if item % 200 == 0:
+        #     print("\tSLEEP 300...")
+        #     time.sleep(300)
 
 
 if __name__ == '__main__':
