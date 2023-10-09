@@ -19,7 +19,7 @@ from database import DataBase
 
 
 # URL = "https://www.otomoto.pl/osobowe"
-URL = "https://www.otomoto.pl/osobowe/volkswagen/od-2008?search%5Bfilter_float_year%3Ato%5D=2011"
+URL = "https://www.otomoto.pl/osobowe/volkswagen/passat?search%5Bfilter_float_year%3Ato%5D=2010"
 
 HEADERS = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
@@ -126,7 +126,7 @@ async def main():
     results = []
     for page in range(1, pages_count+1):
         tasks.append(asyncio.create_task(get_cars_link(session=session, page_number=page)))
-        if page % 100 == 0:
+        if page % 20 == 0:
             results += await asyncio.gather(*tasks)
             tasks = []
             # print("\tSLEEP 180...")
@@ -173,6 +173,6 @@ async def main():
         #     print("\tSLEEP 300...")
         #     time.sleep(300)
 
-
+    session.close()
 if __name__ == '__main__':
     asyncio.run(main())

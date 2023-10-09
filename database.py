@@ -48,3 +48,7 @@ class DataBase:
                 await connection.execute(query)
             except UniqueViolationError:
                 pass
+            except Exception as ex:
+                print(query)
+                print(ex)
+                sys.exit()
