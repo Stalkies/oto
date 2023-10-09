@@ -1,19 +1,22 @@
-import asyncio
-from aiohttp import ClientSession
-import sys
-from bs4 import BeautifulSoup
-import json
-import time
-
-from database import DataBase
-
+try:
+    import sys
+    import asyncio
+    from aiohttp import ClientSession
+    import sys
+    from bs4 import BeautifulSoup
+    import json
+    import time
+    from config import Config
+    from database import DataBase
+    from utils import get_pln_price
+except ImportError:
+    print('Missing modules. Use:\n\tpip install -r requirements.txt')
+    sys.exit()
 '''
     TODO:
 1. check currency and exchange all currencies to PLN
-2. upload info to DB
-3. closing session
-4. add to parsing keys 'Wersja', 'Generacja'
-5. fix utils.generate_data_types
+2. closing session
+3. add to parsing keys 'Wersja', 'Generacja'
 '''
 
 
@@ -99,13 +102,21 @@ async def get_car_info(session: ClientSession, link, ERROR_LINKS):
                     else:
                         data_dict[PARSING_KEYS[key]] = value
                 try:
-                    data_dict['price'] = int(float(soup.find('h3', class_='offer-price__number')
+                    price = int(float(soup.find('h3', class_='offer-price__number')
                                                     .text.replace(' ', '').replace(',','.')))
-                    data_dict['currency'] = soup.find('p', class_='offer-price__currency').text
+                    currency = soup.find('p', class_='offer-price__currency').text
+                    data_dict['original_currency'] = currency
+                    data_dict['original_price'] = price
+                    data_dict['currency'] = 'PLN'
+                    if currency != 'PLN':
+                        data_dict['price'] = get_pln_price(price=price, currency=currency)
+                    else:
+                        data_dict['price'] = price
+                    
+                        
                 except AttributeError:
-                    data_dict['price'] = None
+                    pass
                 data_dict['link'] = link
-                print(f'[INFO] Link {link} successfully parsed')
                 return data_dict
             else:
                 ERROR_LINKS.append(link)
@@ -114,65 +125,56 @@ async def get_car_info(session: ClientSession, link, ERROR_LINKS):
 
 
 async def main():
-    ERROR_LINKS = []
-    db = DataBase()
-    await db.create_pool()
-
     session = ClientSession(headers=HEADERS)
+    try:
+        ERROR_LINKS = []
+        db = DataBase()
+        await db.create_pool()
 
-    pages_count = await get_pages_count(session=session)
-    print("Pages count:", pages_count)
-    tasks = []
-    results = []
-    for page in range(1, pages_count+1):
-        tasks.append(asyncio.create_task(get_cars_link(session=session, page_number=page)))
-        if page % 20 == 0:
-            results += await asyncio.gather(*tasks)
-            tasks = []
-            # print("\tSLEEP 180...")
-            # time.sleep(180)
-
-    links = set()
-    for list_links in results:
-        links.update(list_links)
-    links = list(links)
-    print("Links count:", len(links))
-
-    # GETTING CAR INFO
-    item = 0
-    while links:
-        tasks = []
-        for link in links[0:20]:
-            tasks.append(get_car_info(session=session, link=link, ERROR_LINKS=ERROR_LINKS))
-        links = links[20:]
-        cars = await asyncio.gather(*tasks)
-        await db.create_table(cars)
-        for car in cars:
-            await db.add_car(car=car)
-        print("+\t20")
-        # item += 20
-        # if item % 200 == 0:
-        #     print("\tSLEEP 300...")
-        #     time.sleep(300)
-
-    # RETRYING ERRORS
-    print('Errors:', len(ERROR_LINKS))
-    tasks = []
-    item = 0
-    while ERROR_LINKS:
-        for link in ERROR_LINKS[0:20]:
-            tasks.append(get_car_info(session=session, link=link, ERROR_LINKS=ERROR_LINKS))
-        ERROR_LINKS = ERROR_LINKS[20:]
-        cars = await asyncio.gather(*tasks)
-        for car in cars:
-            await db.add_car(car=car)
-        item += len(tasks)
-        print(f'\tErrors left: {len(ERROR_LINKS)}')
         
-        # if item % 200 == 0:
-        #     print("\tSLEEP 300...")
-        #     time.sleep(300)
 
-    session.close()
+        pages_count = await get_pages_count(session=session)
+        print("Pages count:", pages_count)
+        tasks = []
+        results = []
+        for page in range(1, pages_count+1):
+            tasks.append(asyncio.create_task(get_cars_link(session=session, page_number=page)))
+            if page % Config.parse_per_time == 0:
+                results += await asyncio.gather(*tasks)
+                tasks = []
+
+        links = set()
+        for list_links in results:
+            links.update(list_links)
+        links = list(links)
+        print("Links count:", len(links))
+
+        # GETTING CAR INFO
+        while links:
+            tasks = []
+            for link in links[0:Config.parse_per_time]:
+                tasks.append(get_car_info(session=session, link=link, ERROR_LINKS=ERROR_LINKS))
+            links = links[Config.parse_per_time:]
+            cars = await asyncio.gather(*tasks)
+            await db.create_table(cars)
+            for car in cars:
+                await db.add_car(car=car)
+            print("+\t" + str(Config.parse_per_time))
+
+        # RETRYING ERRORS
+        print('Errors:', len(ERROR_LINKS))
+        tasks = []
+        while ERROR_LINKS:
+            for link in ERROR_LINKS[0:Config.parse_per_time]:
+                tasks.append(get_car_info(session=session, link=link, ERROR_LINKS=ERROR_LINKS))
+            ERROR_LINKS = ERROR_LINKS[Config.parse_per_time:]
+            cars = await asyncio.gather(*tasks)
+            for car in cars:
+                await db.add_car(car=car)
+            print(f'\tErrors left: {len(ERROR_LINKS)}')
+    except Exception as _ex:
+        raise(_ex)
+    finally:
+        await session.close()
 if __name__ == '__main__':
     asyncio.run(main())

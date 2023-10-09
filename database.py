@@ -50,5 +50,3 @@ class DataBase:
                 pass
             except Exception as ex:
                 print(query)
-                print(ex)
-                sys.exit()
