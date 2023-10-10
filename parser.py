@@ -25,9 +25,6 @@ except ImportError:
 # URL = "https://www.otomoto.pl/osobowe"
 URL = "https://www.otomoto.pl/osobowe/"
 
-URL = "https://www.otomoto.pl/osobowe"
-# URL = "https://www.otomoto.pl/osobowe/volkswagen/passat?search%5Bfilter_float_year%3Ato%5D=2010"
-
 ua = UserAgent()
 HEADERS = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
