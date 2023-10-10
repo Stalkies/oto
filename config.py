@@ -11,5 +11,6 @@ class Config:
     pg_ip: str = environ.get('PG_IP', message)
     pg_database: str = environ.get('PG_DATABASE', message)
     POSTGRES_URI = f'postgresql://{pg_user}:{pg_password}@{pg_ip}/{pg_database}'
-    
-    parse_per_time = 20
+    print(POSTGRES_URI)
+
+    parse_per_time = 100

@@ -1,5 +1,6 @@
 from forex_python.converter import CurrencyRates
 
+
 def generate_data_types(data: list) -> dict:
     data_types = {}
 
@@ -17,6 +18,7 @@ def generate_data_types(data: list) -> dict:
                     data_types[key] = 'DECIMAL'
 
     return data_types
+
 
 def get_pln_price(price: float, currency:str):
     c = CurrencyRates()
