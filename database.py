@@ -10,6 +10,7 @@ class DataBase:
 
     def __init__(self):
         self.pool = None
+        self.table_exist = False
 
     async def create_pool(self) -> None:
         try:
@@ -30,14 +31,19 @@ class DataBase:
             query = query.rstrip(", ") + ")"
             try:
                 await connection.execute(query)
+                self.table_exist = True
             except Exception as _ex:
                 print('\t[ERROR] Creating table failed:\n', _ex)
 
     async def add_car(self, car: dict) -> None:
         async with self.pool.acquire() as connection:
-            columns = ", ".join(car.keys())
-            placeholders = ", ".join([f"${i + 1}" for i in range(len(car))])
-            values = tuple(car.values())
+            try:
+                columns = ", ".join(car.keys())
+                placeholders = ", ".join([f"${i + 1}" for i in range(len(car))])
+                values = tuple(car.values())
+            except Exception as ex:
+                print(ex)
+                print(car)
             query = f"INSERT INTO car ({columns}) VALUES ({placeholders})"
             try:
                 await connection.execute(query, *values)
@@ -64,12 +70,13 @@ class DataBase:
                 print(query)
                 print(ex)
 
-    import asyncpg
-
     async def check_links_in_db(self, links: list) -> list:
-        async with self.pool.acquire() as connection:
-            query = "SELECT link FROM car WHERE link = ANY($1)"
-            existing_links = await connection.fetch(query, links)
-            existing_links_set = set(row["link"] for row in existing_links)
-            new_links = [link for link in links if link not in existing_links_set]
-            return new_links
+        if self.table_exist:
+            async with self.pool.acquire() as connection:
+                query = "SELECT link FROM car WHERE link = ANY($1)"
+                existing_links = await connection.fetch(query, links)
+                existing_links_set = set(row["link"] for row in existing_links)
+                new_links = [link for link in links if link not in existing_links_set]
+                return new_links
+        else:
+            return links

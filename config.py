@@ -13,4 +13,4 @@ class Config:
     POSTGRES_URI = f'postgresql://{pg_user}:{pg_password}@{pg_ip}/{pg_database}'
     print(POSTGRES_URI)
 
-    parse_per_time = 100
+    parse_per_time = 20

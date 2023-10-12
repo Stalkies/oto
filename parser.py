@@ -9,7 +9,6 @@ try:
     from config import Config
     from database import DataBase
     from utils import get_pln_price
-    from fake_useragent import UserAgent
 except ImportError:
     print('Missing modules. Use:\n\tpip install -r requirements.txt')
     sys.exit()
@@ -23,9 +22,8 @@ except ImportError:
 
 
 # URL = "https://www.otomoto.pl/osobowe"
-URL = "https://www.otomoto.pl/osobowe/"
+URL = "https://www.otomoto.pl/osobowe/bmw/seria-3?search%5Border%5D=created_at_first%3Adesc"
 
-ua = UserAgent()
 HEADERS = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
             # "User-Agent": ua.random,
@@ -146,7 +144,7 @@ async def main():
         ERROR_PAGES = []
         db = DataBase()
         await db.create_pool()
-
+        
         pages_count = await get_pages_count(session=session)
         if not pages_count:
             session = ClientSession(headers=HEADERS)
@@ -154,7 +152,7 @@ async def main():
         print("Pages count:", pages_count)
 
         tasks = []
-        for page in range(1100, pages_count+1):
+        for page in range(1, pages_count+1):
             tasks.append(asyncio.create_task(get_cars_link(session=session, page_number=page)))
 
             if page % 20 == 0 or page == pages_count:
@@ -168,7 +166,7 @@ async def main():
                 links = list(set_links)
 
                 print("\tAll links:", len(links), end=" --- ")
-                links = await db.check_links_in_db(links=links)
+                # links = await db.check_links_in_db(links=links)
                 print("New links:", len(links))
 
                 if links:
@@ -181,6 +179,8 @@ async def main():
                     tasks = []
 
                     cars = [car for car in cars if car]
+                    if not db.table_exist:
+                        await db.create_table(cars)
                     for car in cars:
                         await db.add_car(car=car)
                     cars_count = len(cars)
@@ -197,8 +197,9 @@ async def main():
 
         # RETRYING ERRORS
         print('Errors:', len(ERROR_LINKS))
-        tasks = []
+        
         while ERROR_LINKS:
+            tasks = []
             for link in ERROR_LINKS[0:Config.parse_per_time]:
                 tasks.append(get_car_info(session=session, link=link, ERROR_LINKS=ERROR_LINKS))
             ERROR_LINKS = ERROR_LINKS[Config.parse_per_time:]
